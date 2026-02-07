@@ -179,17 +179,18 @@ function formatAlertMessage(alertData) {
 
 /**
  * Send alert to OpenClaw for AI analysis
- * OpenClaw will analyze and forward to Telegram with recommendation
+ * Uses sessions_spawn with fast model (haiku) for quick response
  */
 async function sendToGateway(message, alertHash) {
   return new Promise((resolve, reject) => {
-    // Wake OpenClaw to analyze and send to Telegram
+    // Spawn a fast sub-agent to analyze and send to Telegram
     const data = JSON.stringify({
-      tool: 'cron',
+      tool: 'sessions_spawn',
       args: {
-        action: 'wake',
-        text: message,
-        mode: 'now'
+        task: message,
+        model: 'haiku',
+        runTimeoutSeconds: 30,
+        cleanup: 'delete'
       }
     });
 
