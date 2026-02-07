@@ -131,16 +131,18 @@ function formatAlertMessage(alertData) {
 }
 
 /**
- * Send wake event to OpenClaw Gateway via /tools/invoke
+ * Send notification to Telegram via OpenClaw Gateway
  */
 async function sendToGateway(message) {
   return new Promise((resolve, reject) => {
+    // Send via message tool to Telegram owner
     const data = JSON.stringify({
-      tool: 'cron',
+      tool: 'message',
       args: {
-        action: 'wake',
-        text: message,
-        mode: 'now'
+        action: 'send',
+        channel: 'telegram',
+        target: 'YOUR_TELEGRAM_ID',  // Eason's Telegram ID
+        message: message
       }
     });
 
