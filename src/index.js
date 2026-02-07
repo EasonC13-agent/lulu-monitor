@@ -19,6 +19,7 @@ const CONFIG = {
 
 let lastAlertHash = null;
 let gatewayToken = null;
+let lastMessageId = null;  // Track message ID for editing after button click
 
 function log(...args) {
   const timestamp = new Date().toISOString();
@@ -198,6 +199,12 @@ async function sendToGateway(message, alertHash) {
           try {
             const result = JSON.parse(body);
             if (result.ok) {
+              // Extract message ID from nested response
+              const details = result.result?.details || {};
+              if (details.messageId) {
+                lastMessageId = details.messageId;
+                debug('Saved message ID:', lastMessageId);
+              }
               debug('Sent to Gateway successfully');
               resolve(true);
             } else {
@@ -225,6 +232,55 @@ async function sendToGateway(message, alertHash) {
       reject(new Error('Request timeout'));
     });
 
+    req.write(data);
+    req.end();
+  });
+}
+
+/**
+ * Edit Telegram message to remove buttons and show result
+ */
+async function editTelegramMessage(messageId, action, success) {
+  return new Promise((resolve) => {
+    const statusEmoji = success ? (action === 'allow' ? '✅' : '🚫') : '❌';
+    const statusText = success 
+      ? (action === 'allow' ? '已允許' : '已封鎖')
+      : '操作失敗';
+    
+    const data = JSON.stringify({
+      tool: 'message',
+      args: {
+        action: 'edit',
+        channel: 'telegram',
+        target: 'YOUR_TELEGRAM_ID',
+        messageId: messageId,
+        message: `${statusEmoji} **${statusText}**`
+      }
+    });
+
+    const options = {
+      hostname: CONFIG.gatewayHost,
+      port: CONFIG.gatewayPort,
+      path: '/tools/invoke',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data),
+        ...(gatewayToken && { 'Authorization': `Bearer ${gatewayToken}` })
+      },
+      timeout: 10000
+    };
+
+    const req = http.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        debug('Edit message result:', res.statusCode);
+        resolve(res.statusCode === 200);
+      });
+    });
+
+    req.on('error', () => resolve(false));
     req.write(data);
     req.end();
   });
@@ -304,8 +360,35 @@ function startCommandServer() {
       res.end(JSON.stringify({ 
         running: true, 
         hasAlert: checkForAlert(),
-        lastAlertHash 
+        lastAlertHash,
+        lastMessageId
       }));
+    } else if (req.method === 'POST' && req.url === '/callback') {
+      // Handle Telegram button callback
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', async () => {
+        try {
+          const { action, messageId } = JSON.parse(body);
+          if (action === 'allow' || action === 'block') {
+            const success = executeAction(action);
+            
+            // Edit Telegram message to remove buttons
+            if (messageId || lastMessageId) {
+              await editTelegramMessage(messageId || lastMessageId, action, success);
+            }
+            
+            res.writeHead(success ? 200 : 500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success, action, messageEdited: true }));
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid action' }));
+          }
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
     } else {
       res.writeHead(404);
       res.end('Not found');
