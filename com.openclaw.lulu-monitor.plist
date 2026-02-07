@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.openclaw.lulu-monitor</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/eason/clawd/lulu-monitor/src/index.js</string>
+        <string>--verbose</string>
+    </array>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <true/>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/eason/clawd/lulu-monitor/logs/stdout.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/eason/clawd/lulu-monitor/logs/stderr.log</string>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/eason/clawd/lulu-monitor</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/eason</string>
+    </dict>
+</dict>
+</plist>

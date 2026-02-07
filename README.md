@@ -1,125 +1,104 @@
 # LuLu Monitor
 
-Monitor [LuLu Firewall](https://objective-see.org/products/lulu.html) alerts and forward them to [OpenClaw](https://github.com/openclaw/openclaw) for remote management.
+A local service that monitors [LuLu Firewall](https://objective-see.org/products/lulu.html) alerts and forwards them to OpenClaw for AI-powered analysis.
 
-## Features
+## Architecture
 
-- 🔍 Monitors for LuLu alert windows
-- 📤 Forwards alerts to OpenClaw via CLI or webhook
-- 🎮 Control LuLu (Allow/Block) via command line
-- 🚀 Lightweight Node.js implementation
+```
+LuLu Alert → lulu-monitor (detects via AppleScript) → OpenClaw Gateway → Claude analyzes → CLI action
+```
+
+Instead of a standalone app with its own API key, this service:
+- Monitors for LuLu alert windows using macOS Accessibility API
+- Extracts all text from the alert (process name, path, pid, connection details)
+- Sends to OpenClaw via Gateway API
+- OpenClaw (Claude) analyzes and decides Allow/Block
+- You execute: `~/clawd/lulu-monitor/scripts/lulu-action.sh allow|block`
 
 ## Installation
 
 ```bash
-npm install -g lulu-monitor
-```
+# Clone/copy to your workspace
+cd ~/clawd/lulu-monitor
 
-Or run directly:
-```bash
-npx lulu-monitor
+# Install launchd service (auto-start on boot)
+./scripts/setup.sh
 ```
 
 ## Usage
 
-### Start Monitoring
+### Automatic (via launchd)
+The service starts automatically on login and runs in the background.
 
+### Manual
 ```bash
-# Use OpenClaw CLI (default)
-lulu-monitor
+# Start manually
+node src/index.js --verbose
 
-# Or send to webhook
-lulu-monitor --webhook http://your-webhook-url
+# Check status
+curl http://127.0.0.1:4441/status
 
-# With verbose logging
-lulu-monitor -v
+# Execute action on current alert
+./scripts/lulu-action.sh allow
+./scripts/lulu-action.sh block
 ```
 
-### Control LuLu Directly
+### Commands
 
-```bash
-# Allow current alert (process lifetime)
-lulu-monitor --allow
+| Command | Description |
+|---------|-------------|
+| `launchctl load ~/Library/LaunchAgents/com.openclaw.lulu-monitor.plist` | Start service |
+| `launchctl unload ~/Library/LaunchAgents/com.openclaw.lulu-monitor.plist` | Stop service |
+| `tail -f ~/clawd/lulu-monitor/logs/stdout.log` | View logs |
+| `curl http://127.0.0.1:4441/status` | Check status |
 
-# Allow permanently
-lulu-monitor --allow always
+## How It Works
 
-# Block current alert
-lulu-monitor --block
+1. **Polling**: Checks every 1 second if a LuLu alert window exists
+2. **Detection**: Uses AppleScript to query System Events for LuLu process windows
+3. **Extraction**: Gets all static text from the alert window
+4. **Forwarding**: Sends to OpenClaw Gateway via `/tools/invoke` API
+5. **Action**: OpenClaw analyzes and tells you to run the action script
+
+## Files
+
 ```
-
-## OpenClaw Integration
-
-LuLu Monitor sends alerts to OpenClaw, which can then:
-1. Notify you via Telegram, Discord, etc.
-2. Wait for your decision
-3. Execute the action on LuLu
-
-### Message Format
-
-When an alert is detected, OpenClaw receives:
-```
-🔥 **LuLu Firewall Alert**
-
-**Connection:**
-• Process: `curl`
-• Path: `/usr/bin/curl`
-• Destination: `185.199.108.153:443` (TCP)
-• DNS: `cdn.github.com`
-
-**Reply with:**
-• `allow always` - Allow permanently
-• `allow process` - Allow for process lifetime
-• `block` - Block this connection
-• `ignore` - Handle locally
-```
-
-## Auto-Start on Login
-
-Create a launchd plist to start on login:
-
-```bash
-cat > ~/Library/LaunchAgents/com.openclaw.lulu-monitor.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.openclaw.lulu-monitor</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/opt/homebrew/bin/node</string>
-        <string>/opt/homebrew/lib/node_modules/lulu-monitor/bin/lulu-monitor.js</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/lulu-monitor.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/lulu-monitor.error.log</string>
-</dict>
-</plist>
-EOF
-
-launchctl load ~/Library/LaunchAgents/com.openclaw.lulu-monitor.plist
+lulu-monitor/
+├── src/
+│   └── index.js           # Main monitor service
+├── scripts/
+│   ├── check-alert.scpt   # AppleScript: check if alert exists
+│   ├── extract-alert.scpt # AppleScript: get alert text
+│   ├── click-allow.scpt   # AppleScript: click Allow
+│   ├── click-block.scpt   # AppleScript: click Block
+│   ├── lulu-action.sh     # CLI helper for OpenClaw
+│   └── setup.sh           # Install launchd service
+├── logs/
+│   └── stdout.log         # Service logs
+└── com.openclaw.lulu-monitor.plist  # launchd config
 ```
 
 ## Requirements
 
-- macOS (tested on 14+)
+- macOS with LuLu Firewall installed
 - Node.js 18+
-- [LuLu Firewall](https://objective-see.org/products/lulu.html)
-- Accessibility permission for Terminal/Node
+- OpenClaw Gateway running
+- Accessibility permission for Terminal/iTerm (to run AppleScript)
 
-## Permissions
+## Configuration
 
-The monitor needs Accessibility permission to read LuLu's window contents. Grant permission in:
-**System Settings → Privacy & Security → Accessibility**
+The service automatically reads from `~/.openclaw/openclaw.json`:
+- `port`: Gateway port
+- `gateway.auth.token`: Authentication token
 
-Add Terminal.app or your Node.js process.
+## Troubleshooting
 
-## License
+**Service not detecting alerts?**
+- Check if LuLu is running: `ps aux | grep -i lulu`
+- Check logs: `tail -f ~/clawd/lulu-monitor/logs/stdout.log`
+- Verify Accessibility permission for your terminal app
 
-MIT
+**Gateway connection failed?**
+- Ensure OpenClaw Gateway is running
+- Check token in `~/.openclaw/openclaw.json`
+- Try manual test: `curl http://127.0.0.1:<port>/tools/invoke -H "Authorization: Bearer <token>"`
