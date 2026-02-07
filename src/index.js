@@ -150,25 +150,28 @@ function formatAlertMessage(alertData) {
   lines.push(`**連線:** ${ipAddress}:${port}`);
   if (dns && dns !== 'unknown') lines.push(`**DNS:** ${dns}`);
   
-  lines.push('');
-  lines.push('回覆 `allow` 或 `block`');
-  
   return lines.join('\n');
 }
 
 /**
- * Send formatted alert directly to Telegram owner
+ * Send formatted alert to Telegram with inline buttons
  */
-async function sendToGateway(message) {
+async function sendToGateway(message, alertHash) {
   return new Promise((resolve, reject) => {
-    // Send directly to Telegram via message tool
+    // Send to Telegram with Allow/Block buttons
     const data = JSON.stringify({
       tool: 'message',
       args: {
         action: 'send',
         channel: 'telegram',
         target: 'YOUR_TELEGRAM_ID',  // Eason's Telegram ID
-        message: message
+        message: message,
+        buttons: [
+          [
+            { text: '✅ Allow', callback_data: `lulu:allow:${alertHash}` },
+            { text: '❌ Block', callback_data: `lulu:block:${alertHash}` }
+          ]
+        ]
       }
     });
 
@@ -243,10 +246,11 @@ async function poll() {
         lastAlertHash = alertData.hash;
         
         const message = formatAlertMessage(alertData);
+        const shortHash = alertData.hash.substring(0, 16).replace(/[^a-zA-Z0-9]/g, '');
         
         try {
-          await sendToGateway(message);
-          log('✅ Alert forwarded to OpenClaw');
+          await sendToGateway(message, shortHash);
+          log('✅ Alert forwarded to Telegram');
         } catch (e) {
           log('⚠️ Failed to send to Gateway:', e.message);
           // Write to file as fallback
