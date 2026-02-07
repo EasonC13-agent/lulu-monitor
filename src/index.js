@@ -110,7 +110,8 @@ function extractAlertData() {
 }
 
 /**
- * Parse alert data and format for Telegram notification
+ * Format alert data for OpenClaw analysis
+ * Includes all raw data so Claude can analyze and recommend
  */
 function formatAlertMessage(alertData) {
   const texts = alertData.texts;
@@ -127,7 +128,6 @@ function formatAlertMessage(alertData) {
   for (let i = 0; i < texts.length; i++) {
     const t = texts[i].trim();
     
-    // Look for specific patterns
     if (t === 'pid:' && texts[i + 1]) {
       pid = texts[i + 1].trim();
     } else if (t === 'args:' && texts[i + 1]) {
@@ -144,7 +144,6 @@ function formatAlertMessage(alertData) {
       const nextVal = texts[i + 1].trim();
       if (nextVal !== 'unknown' && !nextVal.endsWith(':')) dns = nextVal;
     }
-    // Process name is usually a short word without special chars
     else if (!processName && !t.includes(':') && !t.includes('|') && 
              t.length > 0 && t.length < 30 && 
              t !== 'Details & Options' && t !== 'LuLu Alert' &&
@@ -153,43 +152,44 @@ function formatAlertMessage(alertData) {
     }
   }
   
-  // Build clean message
-  const lines = ['🔥 **LuLu Alert**', ''];
-  
-  if (processName) {
-    lines.push(`**程式:** \`${processName}\`${programPath ? ` (${programPath})` : ''}`);
-  }
-  if (pid) lines.push(`**PID:** ${pid}`);
-  if (args) lines.push(`**參數:** ${args}`);
-  if (ipAddress && port) {
-    lines.push(`**連線:** ${ipAddress}:${port}`);
-  } else if (ipAddress) {
-    lines.push(`**連線:** ${ipAddress}`);
-  }
-  if (dns) lines.push(`**DNS:** ${dns}`);
+  // Build message for OpenClaw to analyze
+  const lines = [
+    '[LULU_ALERT]',
+    `process: ${processName || 'unknown'}`,
+    `pid: ${pid}`,
+    `path: ${programPath || 'unknown'}`,
+    `args: ${args || 'none'}`,
+    `ip: ${ipAddress}`,
+    `port: ${port}`,
+    `dns: ${dns || 'unknown'}`,
+    '[/LULU_ALERT]',
+    '',
+    '請分析這個 LuLu 防火牆警報：',
+    '1. 識別程式和連線目標',
+    '2. 評估風險等級 (🟢低/🟡中/🔴高)',
+    '3. 給出建議 (Allow/Block)',
+    '',
+    '然後發送摘要到 Telegram (ID: YOUR_TELEGRAM_ID) 並附上 Allow/Block 按鈕。',
+    '使用 message tool: action=send, channel=telegram, target=YOUR_TELEGRAM_ID',
+    'buttons 格式: [[{"text":"✅ Allow","callback_data":"lulu:allow"},{"text":"❌ Block","callback_data":"lulu:block"}]]'
+  ];
   
   return lines.join('\n');
 }
 
 /**
- * Send formatted alert to Telegram with inline buttons
+ * Send alert to OpenClaw for AI analysis
+ * OpenClaw will analyze and forward to Telegram with recommendation
  */
 async function sendToGateway(message, alertHash) {
   return new Promise((resolve, reject) => {
-    // Send to Telegram with Allow/Block buttons
+    // Wake OpenClaw to analyze and send to Telegram
     const data = JSON.stringify({
-      tool: 'message',
+      tool: 'cron',
       args: {
-        action: 'send',
-        channel: 'telegram',
-        target: 'YOUR_TELEGRAM_ID',  // Eason's Telegram ID
-        message: message,
-        buttons: [
-          [
-            { text: '✅ Allow', callback_data: `lulu:allow:${alertHash}` },
-            { text: '❌ Block', callback_data: `lulu:block:${alertHash}` }
-          ]
-        ]
+        action: 'wake',
+        text: message,
+        mode: 'now'
       }
     });
 
