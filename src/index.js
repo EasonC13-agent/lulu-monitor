@@ -111,12 +111,13 @@ function extractAlertData() {
 
 /**
  * Format alert data for OpenClaw analysis
- * Includes all raw data so Claude can analyze and recommend
+ * Uses pattern matching since UI text order is unpredictable
  */
 function formatAlertMessage(alertData) {
   const texts = alertData.texts;
+  const allText = texts.join(' ');
   
-  // Extract key info by finding label:value pairs
+  // Pattern matching for values
   let processName = '';
   let pid = '';
   let args = '';
@@ -125,30 +126,63 @@ function formatAlertMessage(alertData) {
   let port = '';
   let dns = '';
   
-  for (let i = 0; i < texts.length; i++) {
-    const t = texts[i].trim();
+  // Skip labels and UI elements
+  const skipPatterns = [
+    'Details & Options', 'LuLu Alert', 'Process:', 'Connection:',
+    'pid:', 'args:', 'path:', 'port/protocol:', 'ip address:',
+    '(reverse) dns:', 'Rule Scope:', 'Rule Duration:', 'Time stamp:',
+    'none', 'unknown'
+  ];
+  
+  for (const t of texts) {
+    const trimmed = t.trim();
+    if (!trimmed) continue;
     
-    if (t === 'pid:' && texts[i + 1]) {
-      pid = texts[i + 1].trim();
-    } else if (t === 'args:' && texts[i + 1]) {
-      const nextVal = texts[i + 1].trim();
-      if (nextVal !== 'path:' && nextVal !== 'none') args = nextVal;
-    } else if (t === 'path:' && texts[i + 1]) {
-      const nextVal = texts[i + 1].trim();
-      if (!nextVal.endsWith(':')) programPath = nextVal;
-    } else if (t === 'ip address:' && texts[i + 1]) {
-      ipAddress = texts[i + 1].trim();
-    } else if (t === 'port/protocol:' && texts[i + 1]) {
-      port = texts[i + 1].trim();
-    } else if (t === '(reverse) dns:' && texts[i + 1]) {
-      const nextVal = texts[i + 1].trim();
-      if (nextVal !== 'unknown' && !nextVal.endsWith(':')) dns = nextVal;
+    // Skip labels and UI elements
+    if (skipPatterns.some(p => trimmed.toLowerCase() === p.toLowerCase())) continue;
+    if (trimmed.endsWith(':')) continue;
+    
+    // IP address pattern (IPv4)
+    if (!ipAddress && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(trimmed)) {
+      ipAddress = trimmed;
+      continue;
     }
-    else if (!processName && !t.includes(':') && !t.includes('|') && 
-             t.length > 0 && t.length < 30 && 
-             t !== 'Details & Options' && t !== 'LuLu Alert' &&
-             t !== 'none' && t !== 'Process:' && t !== 'Connection:') {
-      processName = t;
+    
+    // Port pattern: "443 (TCP)" or "53 (UDP)"
+    if (!port && /^\d+\s*\((TCP|UDP)\)$/i.test(trimmed)) {
+      port = trimmed;
+      continue;
+    }
+    
+    // PID: pure number, 4-6 digits
+    if (!pid && /^\d{4,6}$/.test(trimmed)) {
+      pid = trimmed;
+      continue;
+    }
+    
+    // Path: starts with /
+    if (!programPath && trimmed.startsWith('/')) {
+      programPath = trimmed;
+      continue;
+    }
+    
+    // Args: starts with - or contains URL/path-like content
+    if (!args && (trimmed.startsWith('-') || trimmed.includes('://'))) {
+      args = trimmed;
+      continue;
+    }
+    
+    // DNS: contains dots but not IP
+    if (!dns && trimmed.includes('.') && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(trimmed)) {
+      dns = trimmed;
+      continue;
+    }
+    
+    // Process name: short string without special chars, first one found
+    if (!processName && trimmed.length > 0 && trimmed.length < 30 && 
+        /^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+      processName = trimmed;
+      continue;
     }
   }
   
@@ -156,11 +190,11 @@ function formatAlertMessage(alertData) {
   const lines = [
     '[LULU_ALERT]',
     `process: ${processName || 'unknown'}`,
-    `pid: ${pid}`,
+    `pid: ${pid || 'unknown'}`,
     `path: ${programPath || 'unknown'}`,
     `args: ${args || 'none'}`,
-    `ip: ${ipAddress}`,
-    `port: ${port}`,
+    `ip: ${ipAddress || 'unknown'}`,
+    `port: ${port || 'unknown'}`,
     `dns: ${dns || 'unknown'}`,
     '[/LULU_ALERT]',
     '',
