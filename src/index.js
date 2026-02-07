@@ -20,6 +20,7 @@ const CONFIG = {
 let lastAlertHash = null;
 let gatewayToken = null;
 let lastMessageId = null;  // Track message ID for editing after button click
+let lastMessageContent = null;  // Track original message content for editing
 
 function log(...args) {
   const timestamp = new Date().toISOString();
@@ -219,6 +220,7 @@ async function sendToGateway(message, alertHash) {
               const details = result.result?.details || {};
               if (details.messageId) {
                 lastMessageId = details.messageId;
+                lastMessageContent = message; // Save original content for editing
                 debug('Saved message ID:', lastMessageId);
               }
               debug('Sent to Gateway successfully');
@@ -255,6 +257,7 @@ async function sendToGateway(message, alertHash) {
 
 /**
  * Edit Telegram message to remove buttons and show result
+ * Preserves original content, just appends status
  */
 async function editTelegramMessage(messageId, action, success) {
   return new Promise((resolve) => {
@@ -263,6 +266,14 @@ async function editTelegramMessage(messageId, action, success) {
       ? (action === 'allow' ? '已允許' : '已封鎖')
       : '操作失敗';
     
+    // Use original content if available, append status
+    let newMessage;
+    if (lastMessageContent) {
+      newMessage = `${lastMessageContent}\n\n${statusEmoji} **${statusText}**`;
+    } else {
+      newMessage = `${statusEmoji} **${statusText}**`;
+    }
+    
     const data = JSON.stringify({
       tool: 'message',
       args: {
@@ -270,7 +281,7 @@ async function editTelegramMessage(messageId, action, success) {
         channel: 'telegram',
         target: 'YOUR_TELEGRAM_ID',
         messageId: messageId,
-        message: `${statusEmoji} **${statusText}**`
+        message: newMessage
       }
     });
 
