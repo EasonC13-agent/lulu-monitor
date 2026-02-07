@@ -114,42 +114,58 @@ function extractAlertData() {
 function formatAlertMessage(alertData) {
   const texts = alertData.texts;
   
-  // Extract key info from raw texts
-  let processName = 'unknown';
+  // Extract key info by finding label:value pairs
+  let processName = '';
   let pid = '';
   let args = '';
-  let path = '';
+  let programPath = '';
   let ipAddress = '';
   let port = '';
   let dns = '';
   
   for (let i = 0; i < texts.length; i++) {
-    const t = texts[i];
-    const next = texts[i + 1] || '';
+    const t = texts[i].trim();
     
-    if (t === 'pid:') pid = next;
-    else if (t === 'args:') args = next;
-    else if (t === 'path:') path = next;
-    else if (t === 'ip address:') ipAddress = next;
-    else if (t === 'port/protocol:') port = next;
-    else if (t === '(reverse) dns:') dns = next;
-    else if (!t.includes(':') && !t.includes('|') && t.length < 30 && t !== 'Details & Options' && t !== 'LuLu Alert') {
-      if (!processName || processName === 'unknown') processName = t;
+    // Look for specific patterns
+    if (t === 'pid:' && texts[i + 1]) {
+      pid = texts[i + 1].trim();
+    } else if (t === 'args:' && texts[i + 1]) {
+      const nextVal = texts[i + 1].trim();
+      if (nextVal !== 'path:' && nextVal !== 'none') args = nextVal;
+    } else if (t === 'path:' && texts[i + 1]) {
+      const nextVal = texts[i + 1].trim();
+      if (!nextVal.endsWith(':')) programPath = nextVal;
+    } else if (t === 'ip address:' && texts[i + 1]) {
+      ipAddress = texts[i + 1].trim();
+    } else if (t === 'port/protocol:' && texts[i + 1]) {
+      port = texts[i + 1].trim();
+    } else if (t === '(reverse) dns:' && texts[i + 1]) {
+      const nextVal = texts[i + 1].trim();
+      if (nextVal !== 'unknown' && !nextVal.endsWith(':')) dns = nextVal;
+    }
+    // Process name is usually a short word without special chars
+    else if (!processName && !t.includes(':') && !t.includes('|') && 
+             t.length > 0 && t.length < 30 && 
+             t !== 'Details & Options' && t !== 'LuLu Alert' &&
+             t !== 'none' && t !== 'Process:' && t !== 'Connection:') {
+      processName = t;
     }
   }
   
   // Build clean message
-  const lines = [
-    '🔥 **LuLu Alert**',
-    '',
-    `**程式:** \`${processName}\`${path ? ` (${path})` : ''}`,
-    `**PID:** ${pid}`,
-  ];
+  const lines = ['🔥 **LuLu Alert**', ''];
   
-  if (args && args !== 'none') lines.push(`**參數:** ${args}`);
-  
-  lines.push(`**連線:** ${ipAddress}:${port}`);
-  if (dns && dns !== 'unknown') lines.push(`**DNS:** ${dns}`);
+  if (processName) {
+    lines.push(`**程式:** \`${processName}\`${programPath ? ` (${programPath})` : ''}`);
+  }
+  if (pid) lines.push(`**PID:** ${pid}`);
+  if (args) lines.push(`**參數:** ${args}`);
+  if (ipAddress && port) {
+    lines.push(`**連線:** ${ipAddress}:${port}`);
+  } else if (ipAddress) {
+    lines.push(`**連線:** ${ipAddress}`);
+  }
+  if (dns) lines.push(`**DNS:** ${dns}`);
   
   return lines.join('\n');
 }
