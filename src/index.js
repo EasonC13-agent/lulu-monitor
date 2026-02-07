@@ -206,8 +206,8 @@ function formatAlertMessage(alertData) {
     '然後發送摘要到 Telegram (ID: YOUR_TELEGRAM_ID) 並附上 2x2 按鈕矩陣。',
     '使用 message tool: action=send, channel=telegram, target=YOUR_TELEGRAM_ID',
     'buttons 格式 (2x2):',
-    '[[{"text":"✅ Allow","callback_data":"lulu:allow"},{"text":"✅ Once","callback_data":"lulu:allow-once"}],',
-    '[{"text":"❌ Block","callback_data":"lulu:block"},{"text":"❌ Once","callback_data":"lulu:block-once"}]]'
+    '[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],',
+    '[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]'
   ];
   
   return lines.join('\n');
