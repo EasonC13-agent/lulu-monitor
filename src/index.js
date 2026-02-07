@@ -108,34 +108,60 @@ function extractAlertData() {
 }
 
 /**
- * Format alert for OpenClaw
+ * Parse alert data and format for Telegram notification
  */
 function formatAlertMessage(alertData) {
-  return [
-    '🔥 **LuLu Firewall Alert** - Action Required',
+  const texts = alertData.texts;
+  
+  // Extract key info from raw texts
+  let processName = 'unknown';
+  let pid = '';
+  let args = '';
+  let path = '';
+  let ipAddress = '';
+  let port = '';
+  let dns = '';
+  
+  for (let i = 0; i < texts.length; i++) {
+    const t = texts[i];
+    const next = texts[i + 1] || '';
+    
+    if (t === 'pid:') pid = next;
+    else if (t === 'args:') args = next;
+    else if (t === 'path:') path = next;
+    else if (t === 'ip address:') ipAddress = next;
+    else if (t === 'port/protocol:') port = next;
+    else if (t === '(reverse) dns:') dns = next;
+    else if (!t.includes(':') && !t.includes('|') && t.length < 30 && t !== 'Details & Options' && t !== 'LuLu Alert') {
+      if (!processName || processName === 'unknown') processName = t;
+    }
+  }
+  
+  // Build clean message
+  const lines = [
+    '🔥 **LuLu Alert**',
     '',
-    'A process is trying to make a network connection. Please analyze and decide.',
-    '',
-    '**Extracted text from alert:**',
-    '```',
-    ...alertData.texts,
-    '```',
-    '',
-    'Based on this information:',
-    '1. Identify the process and what it\'s connecting to',
-    '2. Assess if this is expected/safe',
-    '3. Run: `~/clawd/lulu-monitor/scripts/lulu-action.sh allow` or `block`',
-    '',
-    `_Alert hash: ${alertData.hash.substring(0, 16)}_`
-  ].join('\n');
+    `**程式:** \`${processName}\`${path ? ` (${path})` : ''}`,
+    `**PID:** ${pid}`,
+  ];
+  
+  if (args && args !== 'none') lines.push(`**參數:** ${args}`);
+  
+  lines.push(`**連線:** ${ipAddress}:${port}`);
+  if (dns && dns !== 'unknown') lines.push(`**DNS:** ${dns}`);
+  
+  lines.push('');
+  lines.push('回覆 `allow` 或 `block`');
+  
+  return lines.join('\n');
 }
 
 /**
- * Send notification to Telegram via OpenClaw Gateway
+ * Send formatted alert directly to Telegram owner
  */
 async function sendToGateway(message) {
   return new Promise((resolve, reject) => {
-    // Send via message tool to Telegram owner
+    // Send directly to Telegram via message tool
     const data = JSON.stringify({
       tool: 'message',
       args: {
