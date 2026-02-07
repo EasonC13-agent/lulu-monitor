@@ -201,11 +201,13 @@ function formatAlertMessage(alertData) {
     '請分析這個 LuLu 防火牆警報：',
     '1. 識別程式和連線目標',
     '2. 評估風險等級 (🟢低/🟡中/🔴高)',
-    '3. 給出建議 (Allow/Block)',
+    '3. 給出建議 (Allow/Block, 永久或本次)',
     '',
-    '然後發送摘要到 Telegram (ID: YOUR_TELEGRAM_ID) 並附上 Allow/Block 按鈕。',
+    '然後發送摘要到 Telegram (ID: YOUR_TELEGRAM_ID) 並附上 2x2 按鈕矩陣。',
     '使用 message tool: action=send, channel=telegram, target=YOUR_TELEGRAM_ID',
-    'buttons 格式: [[{"text":"✅ Allow","callback_data":"lulu:allow"},{"text":"❌ Block","callback_data":"lulu:block"}]]'
+    'buttons 格式 (2x2):',
+    '[[{"text":"✅ Allow","callback_data":"lulu:allow"},{"text":"✅ Once","callback_data":"lulu:allow-once"}],',
+    '[{"text":"❌ Block","callback_data":"lulu:block"},{"text":"❌ Once","callback_data":"lulu:block-once"}]]'
   ];
   
   return lines.join('\n');
@@ -296,9 +298,12 @@ async function sendToGateway(message, alertHash) {
  */
 async function editTelegramMessage(messageId, action, success) {
   return new Promise((resolve) => {
-    const statusEmoji = success ? (action === 'allow' ? '✅' : '🚫') : '❌';
+    const isAllow = action.startsWith('allow');
+    const isOnce = action.endsWith('-once');
+    const statusEmoji = success ? (isAllow ? '✅' : '🚫') : '❌';
+    const durationText = isOnce ? ' (本次)' : ' (永久)';
     const statusText = success 
-      ? (action === 'allow' ? '已允許' : '已封鎖')
+      ? (isAllow ? '已允許' : '已封鎖') + durationText
       : '操作失敗';
     
     // Use original content if available, append status
@@ -404,13 +409,14 @@ function startCommandServer() {
       req.on('end', () => {
         try {
           const { action } = JSON.parse(body);
-          if (action === 'allow' || action === 'block') {
+          const validActions = ['allow', 'block', 'allow-once', 'block-once'];
+          if (validActions.includes(action)) {
             const success = executeAction(action);
             res.writeHead(success ? 200 : 500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success, action }));
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Invalid action. Use "allow" or "block"' }));
+            res.end(JSON.stringify({ error: 'Invalid action. Use "allow", "block", "allow-once", or "block-once"' }));
           }
         } catch (e) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -432,7 +438,8 @@ function startCommandServer() {
       req.on('end', async () => {
         try {
           const { action, messageId } = JSON.parse(body);
-          if (action === 'allow' || action === 'block') {
+          const validActions = ['allow', 'block', 'allow-once', 'block-once'];
+          if (validActions.includes(action)) {
             const success = executeAction(action);
             
             // Edit Telegram message to remove buttons
@@ -473,11 +480,24 @@ function startCommandServer() {
 
 /**
  * Execute action on LuLu alert
+ * Supports: allow, block, allow-once, block-once
  */
 function executeAction(action) {
   log(`Executing: ${action}`);
   
-  const scriptName = action === 'allow' ? 'click-allow.scpt' : 'click-block.scpt';
+  const scriptMap = {
+    'allow': 'click-allow.scpt',
+    'block': 'click-block.scpt',
+    'allow-once': 'click-allow-once.scpt',
+    'block-once': 'click-block-once.scpt'
+  };
+  
+  const scriptName = scriptMap[action];
+  if (!scriptName) {
+    log(`❌ Unknown action: ${action}`);
+    return false;
+  }
+  
   const result = runScript(scriptName);
   
   if (result !== null) {
@@ -490,10 +510,10 @@ function executeAction(action) {
   }
 }
 
-// CLI action handler - allow running as: node index.js allow|block
-const action = process.argv[2];
-if (action === 'allow' || action === 'block') {
-  const success = executeAction(action);
+// CLI action handler - allow running as: node index.js allow|block|allow-once|block-once
+const cliAction = process.argv[2];
+if (['allow', 'block', 'allow-once', 'block-once'].includes(cliAction)) {
+  const success = executeAction(cliAction);
   process.exit(success ? 0 : 1);
 }
 
