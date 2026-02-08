@@ -230,26 +230,22 @@ function formatAlertMessage(alertData) {
   
   // Add auto-execute instructions if enabled
   if (CONFIG.autoExecute) {
-    lines.push(
-      '',
-      '⚡ 自動執行模式已開啟：',
-      '如果你對決策有高度信心（已知安全程式如 curl/brew/node/git/系統服務連到正常目標），',
-      '可以直接執行動作：',
-      '1. 先調用 exec: curl -X POST http://127.0.0.1:4441/callback -H "Content-Type: application/json" -d \'{"action":"allow"}\'',
-      '2. 然後發送 Telegram 通知（無按鈕），說明已自動允許及原因',
-      '',
-      '如果信心不足或有任何疑慮，改為發送帶按鈕的通知讓用戶決定。'
-    );
+    lines.push('');
+    lines.push('⚡ 自動執行模式已開啟：');
+    lines.push('如果你對決策有高度信心（已知安全程式如 curl/brew/node/git/系統服務連到正常目標），');
+    lines.push('可以直接執行動作：');
+    lines.push('1. 先調用 exec: curl -X POST http://127.0.0.1:4441/callback -H "Content-Type: application/json" -d "{\\"action\\":\\"allow\\"}"');
+    lines.push('2. 然後發送 Telegram 通知（無按鈕），說明已自動允許及原因');
+    lines.push('');
+    lines.push('如果信心不足或有任何疑慮，改為發送帶按鈕的通知讓用戶決定。');
   }
   
-  lines.push(
-    '',
-    `發送摘要到 Telegram (ID: ${CONFIG.telegramId}) 並附上 2x2 按鈕矩陣。`,
-    `使用 message tool: action=send, channel=telegram, target=${CONFIG.telegramId}`,
-    'buttons 格式 (2x2):',
-    '[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],',
-    '[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]'
-  ];
+  lines.push('');
+  lines.push('發送摘要到 Telegram (ID: ' + CONFIG.telegramId + ') 並附上 2x2 按鈕矩陣。');
+  lines.push('使用 message tool: action=send, channel=telegram, target=' + CONFIG.telegramId);
+  lines.push('buttons 格式 (2x2):');
+  lines.push('[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],');
+  lines.push('[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]');
   
   return lines.join('\n');
 }
