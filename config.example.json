@@ -1,4 +1,5 @@
 {
   "telegramId": "YOUR_TELEGRAM_ID",
-  "autoExecute": false
+  "autoExecute": false,
+  "autoExecuteAction": "allow-once"
 }

@@ -16,6 +16,7 @@ const CONFIG = {
   gatewayHost: '127.0.0.1',
   verbose: process.argv.includes('--verbose') || process.argv.includes('-v'),
   autoExecute: false,      // Auto-execute on high confidence (requires user opt-in)
+  autoExecuteAction: 'allow-once',  // 'allow-once' (conservative) or 'allow' (permanent)
   telegramId: 'YOUR_TELEGRAM_ID'  // Default, can be overridden in config
 };
 
@@ -47,6 +48,10 @@ function loadLocalConfig() {
     if (typeof config.autoExecute === 'boolean') {
       CONFIG.autoExecute = config.autoExecute;
       debug('Auto-execute mode:', CONFIG.autoExecute ? 'ENABLED' : 'disabled');
+    }
+    if (config.autoExecuteAction === 'allow' || config.autoExecuteAction === 'allow-once') {
+      CONFIG.autoExecuteAction = config.autoExecuteAction;
+      debug('Auto-execute action:', CONFIG.autoExecuteAction);
     }
     if (config.telegramId) {
       CONFIG.telegramId = config.telegramId;
@@ -234,7 +239,7 @@ function formatAlertMessage(alertData) {
     lines.push('⚡ 自動執行模式已開啟：');
     lines.push('如果你對決策有高度信心（已知安全程式如 curl/brew/node/git/系統服務連到正常目標），');
     lines.push('可以直接執行動作：');
-    lines.push('1. 先調用 exec: curl -X POST http://127.0.0.1:4441/callback -H "Content-Type: application/json" -d "{\\"action\\":\\"allow\\"}"');
+    lines.push('1. 先調用 exec: curl -X POST http://127.0.0.1:4441/callback -H "Content-Type: application/json" -d "{\\"action\\":\\"' + CONFIG.autoExecuteAction + '\\"}"');
     lines.push('2. 然後發送 Telegram 通知（無按鈕），說明已自動允許及原因');
     lines.push('');
     lines.push('如果信心不足或有任何疑慮，改為發送帶按鈕的通知讓用戶決定。');

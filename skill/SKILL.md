@@ -28,12 +28,15 @@ For reduced interruptions, enable auto-execute mode. When the AI has high confid
 cat > ~/.openclaw/lulu-monitor/config.json << 'EOF'
 {
   "telegramId": "YOUR_TELEGRAM_ID",
-  "autoExecute": true
+  "autoExecute": true,
+  "autoExecuteAction": "allow-once"
 }
 EOF
 ```
 
-**Default is OFF** - requires explicit opt-in. When disabled, all alerts require manual button press.
+**Options:**
+- `autoExecute`: `false` (default) - all alerts require manual button press
+- `autoExecuteAction`: `"allow-once"` (default, conservative) or `"allow"` (permanent rule)
 
 ## Installation
 
