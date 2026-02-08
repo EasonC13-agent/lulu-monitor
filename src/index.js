@@ -14,7 +14,9 @@ const CONFIG = {
   pollInterval: 1000,      // Check every 1 second
   gatewayPort: 18789,      // Default, will be loaded from config
   gatewayHost: '127.0.0.1',
-  verbose: process.argv.includes('--verbose') || process.argv.includes('-v')
+  verbose: process.argv.includes('--verbose') || process.argv.includes('-v'),
+  autoExecute: false,      // Auto-execute on high confidence (requires user opt-in)
+  telegramId: 'YOUR_TELEGRAM_ID'  // Default, can be overridden in config
 };
 
 let lastAlertHash = null;
@@ -30,6 +32,28 @@ function log(...args) {
 function debug(...args) {
   if (CONFIG.verbose) {
     log('[DEBUG]', ...args);
+  }
+}
+
+/**
+ * Load local LuLu Monitor config
+ */
+function loadLocalConfig() {
+  const configPath = path.join(__dirname, '..', 'config.json');
+  try {
+    const configData = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configData);
+    
+    if (typeof config.autoExecute === 'boolean') {
+      CONFIG.autoExecute = config.autoExecute;
+      debug('Auto-execute mode:', CONFIG.autoExecute ? 'ENABLED' : 'disabled');
+    }
+    if (config.telegramId) {
+      CONFIG.telegramId = config.telegramId;
+      debug('Telegram ID:', CONFIG.telegramId);
+    }
+  } catch (e) {
+    debug('No local config found, using defaults');
   }
 }
 
@@ -202,9 +226,26 @@ function formatAlertMessage(alertData) {
     '1. 識別程式和連線目標',
     '2. 評估風險等級 (🟢低/🟡中/🔴高)',
     '3. 給出建議 (Allow/Block, 永久或本次)',
+  ];
+  
+  // Add auto-execute instructions if enabled
+  if (CONFIG.autoExecute) {
+    lines.push(
+      '',
+      '⚡ 自動執行模式已開啟：',
+      '如果你對決策有高度信心（已知安全程式如 curl/brew/node/git/系統服務連到正常目標），',
+      '可以直接執行動作：',
+      '1. 先調用 exec: curl -X POST http://127.0.0.1:4441/callback -H "Content-Type: application/json" -d \'{"action":"allow"}\'',
+      '2. 然後發送 Telegram 通知（無按鈕），說明已自動允許及原因',
+      '',
+      '如果信心不足或有任何疑慮，改為發送帶按鈕的通知讓用戶決定。'
+    );
+  }
+  
+  lines.push(
     '',
-    '然後發送摘要到 Telegram (ID: YOUR_TELEGRAM_ID) 並附上 2x2 按鈕矩陣。',
-    '使用 message tool: action=send, channel=telegram, target=YOUR_TELEGRAM_ID',
+    `發送摘要到 Telegram (ID: ${CONFIG.telegramId}) 並附上 2x2 按鈕矩陣。`,
+    `使用 message tool: action=send, channel=telegram, target=${CONFIG.telegramId}`,
     'buttons 格式 (2x2):',
     '[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],',
     '[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]'
@@ -519,7 +560,11 @@ if (['allow', 'block', 'allow-once', 'block-once'].includes(cliAction)) {
 
 // Main
 log('🔍 LuLu Monitor starting...');
+loadLocalConfig();
 loadGatewayConfig();
 startCommandServer();
 poll();
 log('👀 Watching for LuLu alerts...');
+if (CONFIG.autoExecute) {
+  log('⚡ Auto-execute mode ENABLED - high confidence alerts will be handled automatically');
+}
