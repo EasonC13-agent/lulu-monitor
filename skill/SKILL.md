@@ -16,6 +16,25 @@ AI-powered companion for [LuLu Firewall](https://objective-see.org/products/lulu
 5. Provides 4 action buttons: Always Allow, Allow Once, Always Block, Block Once
 6. Executes the action on LuLu when user taps a button
 
+## Auto-Execute Mode (Optional)
+
+For reduced interruptions, enable auto-execute mode. When the AI has high confidence (known safe programs like curl, brew, node, git connecting to normal destinations), it will:
+1. Automatically execute the Allow action
+2. Still send a Telegram notification explaining what was auto-allowed
+
+**To enable:**
+```bash
+# Create config.json in install directory
+cat > ~/.openclaw/lulu-monitor/config.json << 'EOF'
+{
+  "telegramId": "YOUR_TELEGRAM_ID",
+  "autoExecute": true
+}
+EOF
+```
+
+**Default is OFF** - requires explicit opt-in. When disabled, all alerts require manual button press.
+
 ## Installation
 
 ### Prerequisites
