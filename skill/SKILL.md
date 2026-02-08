@@ -7,6 +7,8 @@ description: AI-powered LuLu Firewall companion for macOS. Monitors firewall ale
 
 AI-powered companion for [LuLu Firewall](https://objective-see.org/products/lulu.html) on macOS.
 
+![LuLu Monitor Screenshot](screenshot.png)
+
 ## What It Does
 
 1. Monitors LuLu firewall alert popups

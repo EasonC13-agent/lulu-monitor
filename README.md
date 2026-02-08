@@ -1,6 +1,14 @@
 # LuLu Monitor
 
-A local service that monitors [LuLu Firewall](https://objective-see.org/products/lulu.html) alerts and forwards them to OpenClaw for AI-powered analysis.
+AI-powered companion for [LuLu Firewall](https://objective-see.org/products/lulu.html) on macOS. Monitors firewall alerts, analyzes connections with AI, and sends Telegram notifications with Allow/Block buttons.
+
+![LuLu Monitor Screenshot](screenshot.png)
+
+**Features:**
+- 🔥 Real-time monitoring of LuLu firewall alerts
+- 🤖 AI-powered analysis (identifies process, destination, risk level)
+- 📱 Telegram notifications with inline Allow/Block buttons
+- ⚡ Optional auto-execute mode for high-confidence decisions
 
 ## Architecture
 
