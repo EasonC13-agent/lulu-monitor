@@ -3,12 +3,20 @@ tell application "System Events"
 	tell process "LuLu"
 		set alertWindow to first window whose name contains "Alert"
 		
-		-- Set Rule Scope to "endpoint" via popup button
+		-- Set Rule Scope to "remote endpoint" (index 1) via popup button
 		try
 			set scopePopup to pop up button 1 of alertWindow
 			click scopePopup
 			delay 0.2
-			click menu item "endpoint" of menu 1 of scopePopup
+			try
+				click menu item 2 of menu 1 of scopePopup
+			on error
+				try
+					click menu item "remote endpoint" of menu 1 of scopePopup
+				on error
+					click menu item "endpoint" of menu 1 of scopePopup
+				end try
+			end try
 			delay 0.2
 		end try
 		
