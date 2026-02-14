@@ -55,6 +55,22 @@ Required:
 - **OpenClaw Gateway**: Running with Telegram channel configured
 - **Accessibility Permission**: System Settings > Privacy > Accessibility > Enable Terminal/osascript
 
+### Gateway Configuration (Required)
+
+The monitor calls `sessions_spawn` via OpenClaw's `/tools/invoke` HTTP API. This tool is blocked by default. Add it to the allowlist in `~/.openclaw/openclaw.json`:
+
+```json5
+{
+  "gateway": {
+    "tools": {
+      "allow": ["sessions_spawn"]
+    }
+  }
+}
+```
+
+Without this, alerts will be detected but fail to forward (404 in logs).
+
 ### Install
 
 ```bash

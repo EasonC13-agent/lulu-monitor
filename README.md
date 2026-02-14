@@ -93,6 +93,29 @@ lulu-monitor/
 - OpenClaw Gateway running
 - Accessibility permission for Terminal/iTerm (to run AppleScript)
 
+### Gateway Configuration (Required)
+
+The monitor uses OpenClaw's `/tools/invoke` HTTP API to spawn a subagent for analysis. By default, `sessions_spawn` is blocked on this endpoint. You must allowlist it:
+
+Add to your `~/.openclaw/openclaw.json`:
+
+```json5
+{
+  "gateway": {
+    "tools": {
+      "allow": ["sessions_spawn"]
+    }
+  }
+}
+```
+
+Or via CLI:
+```bash
+openclaw config set gateway.tools.allow '["sessions_spawn"]'
+```
+
+**Security note:** This only affects the local HTTP API (`/tools/invoke`). The Gateway binds to loopback by default, so only local processes with the auth token can use it.
+
 ## Configuration
 
 The service automatically reads from `~/.openclaw/openclaw.json`:
