@@ -17,7 +17,7 @@ const CONFIG = {
   verbose: process.argv.includes('--verbose') || process.argv.includes('-v'),
   autoExecute: false,      // Auto-execute on high confidence (requires user opt-in)
   autoExecuteAction: 'allow-once',  // 'allow-once' (conservative) or 'allow' (permanent)
-  telegramId: 'YOUR_TELEGRAM_ID'  // Default, can be overridden in config
+  telegramId: null  // Required: set in config.json or LULU_TELEGRAM_ID env
 };
 
 let lastAlertHash = null;
@@ -59,6 +59,17 @@ function loadLocalConfig() {
     }
   } catch (e) {
     debug('No local config found, using defaults');
+  }
+  
+  // Env var override
+  if (process.env.LULU_TELEGRAM_ID) {
+    CONFIG.telegramId = process.env.LULU_TELEGRAM_ID;
+    debug('Telegram ID from env:', CONFIG.telegramId);
+  }
+  
+  if (!CONFIG.telegramId) {
+    log('ERROR: telegramId is required. Set it in config.json or LULU_TELEGRAM_ID env var.');
+    process.exit(1);
   }
 }
 
@@ -361,7 +372,7 @@ async function editTelegramMessage(messageId, action, success) {
       args: {
         action: 'edit',
         channel: 'telegram',
-        target: 'YOUR_TELEGRAM_ID',
+        target: CONFIG.telegramId,
         messageId: messageId,
         message: newMessage
       }
