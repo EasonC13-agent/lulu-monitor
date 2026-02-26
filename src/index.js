@@ -246,11 +246,11 @@ function formatAlertMessage(alertData) {
   }
   
   lines.push('');
-  lines.push('發送摘要到 Telegram (ID: ' + CONFIG.telegramId + ') 並附上 2x2 按鈕矩陣。');
-  lines.push('使用 message tool: action=send, channel=telegram, target=' + CONFIG.telegramId);
-  lines.push('buttons 格式 (2x2):');
-  lines.push('[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],');
-  lines.push('[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]');
+  lines.push('發送摘要到 Telegram 並附上按鈕。');
+  lines.push('⚠️ 重要：message tool 的 buttons 參數無效！必須用 exec 跑 CLI：');
+  lines.push('exec command: openclaw message send --channel telegram --target ' + CONFIG.telegramId + ' --message "<你的分析摘要>" --buttons \'[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]\'');
+  lines.push('注意：--message 的內容要用雙引號包住，裡面的特殊字元要 escape。');
+  lines.push('發送後回覆 NO_REPLY（因為已經用 CLI 發了）。');
   
   return lines.join('\n');
 }

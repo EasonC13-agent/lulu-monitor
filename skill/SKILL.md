@@ -91,6 +91,18 @@ curl http://127.0.0.1:4441/status
 
 Should return `{"running":true,...}`
 
+## Sending Alerts with Inline Buttons
+
+⚠️ **The `message` tool's `buttons`/`components` parameter does NOT work for Telegram inline buttons.** You must use the CLI via `exec`:
+
+```bash
+openclaw message send --channel telegram --target <chat_id> \
+  --message "🔔 LuLu Alert: <summary>" \
+  --buttons '[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]'
+```
+
+After sending via CLI, reply with `NO_REPLY` to avoid duplicate messages.
+
 ## Handling Callbacks
 
 When user clicks a Telegram button, OpenClaw receives a callback like:
