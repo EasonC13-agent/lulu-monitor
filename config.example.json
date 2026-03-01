@@ -1,5 +1,9 @@
 {
-  "telegramId": "YOUR_TELEGRAM_ID",
+  "telegramIds": ["YOUR_TELEGRAM_ID", "ANOTHER_USER_ID"],
+  "telegramNames": {
+    "YOUR_TELEGRAM_ID": "YourName",
+    "ANOTHER_USER_ID": "FriendName"
+  },
   "autoExecute": false,
   "autoExecuteAction": "allow-once"
 }

@@ -17,13 +17,37 @@ const CONFIG = {
   verbose: process.argv.includes('--verbose') || process.argv.includes('-v'),
   autoExecute: false,      // Auto-execute on high confidence (requires user opt-in)
   autoExecuteAction: 'allow-once',  // 'allow-once' (conservative) or 'allow' (permanent)
-  telegramId: null  // Required: set in config.json or LULU_TELEGRAM_ID env
+  telegramIds: [],  // Required: set in config.json or LULU_TELEGRAM_ID env
+  telegramNames: {} // Optional: map of telegramId -> display name
 };
 
 let lastAlertHash = null;
 let gatewayToken = null;
-let lastMessageId = null;  // Track message ID for editing after button click
+let lastMessageIds = {};  // Track message IDs per telegramId for editing after button click
 let lastMessageContent = null;  // Track original message content for editing
+const LOGS_DIR = path.join(__dirname, '..', 'logs');
+
+/**
+ * Append to action log file
+ */
+function logAction(alertInfo, action, userId, success) {
+  try {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+    const logFile = path.join(LOGS_DIR, 'actions.jsonl');
+    const entry = {
+      timestamp: new Date().toISOString(),
+      alert: alertInfo || lastMessageContent?.substring(0, 200),
+      action,
+      userId,
+      userName: CONFIG.telegramNames[userId] || userId,
+      success,
+      messageIds: { ...lastMessageIds }
+    };
+    fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+  } catch (e) {
+    debug('Failed to write action log:', e.message);
+  }
+}
 
 function log(...args) {
   const timestamp = new Date().toISOString();
@@ -53,22 +77,28 @@ function loadLocalConfig() {
       CONFIG.autoExecuteAction = config.autoExecuteAction;
       debug('Auto-execute action:', CONFIG.autoExecuteAction);
     }
-    if (config.telegramId) {
-      CONFIG.telegramId = config.telegramId;
-      debug('Telegram ID:', CONFIG.telegramId);
+    // Support both telegramId (string) and telegramIds (array)
+    if (config.telegramIds && Array.isArray(config.telegramIds)) {
+      CONFIG.telegramIds = config.telegramIds;
+    } else if (config.telegramId) {
+      CONFIG.telegramIds = [config.telegramId];
     }
+    if (config.telegramNames) {
+      CONFIG.telegramNames = config.telegramNames;
+    }
+    debug('Telegram IDs:', CONFIG.telegramIds);
   } catch (e) {
     debug('No local config found, using defaults');
   }
   
-  // Env var override
+  // Env var override (comma-separated)
   if (process.env.LULU_TELEGRAM_ID) {
-    CONFIG.telegramId = process.env.LULU_TELEGRAM_ID;
-    debug('Telegram ID from env:', CONFIG.telegramId);
+    CONFIG.telegramIds = process.env.LULU_TELEGRAM_ID.split(',').map(s => s.trim());
+    debug('Telegram IDs from env:', CONFIG.telegramIds);
   }
   
-  if (!CONFIG.telegramId) {
-    log('ERROR: telegramId is required. Set it in config.json or LULU_TELEGRAM_ID env var.');
+  if (!CONFIG.telegramIds.length) {
+    log('ERROR: telegramIds is required. Set telegramId/telegramIds in config.json or LULU_TELEGRAM_ID env var.');
     process.exit(1);
   }
 }
@@ -257,11 +287,20 @@ function formatAlertMessage(alertData) {
   }
   
   lines.push('');
-  lines.push('發送摘要到 Telegram 並附上按鈕。');
+  lines.push('發送摘要到以下所有 Telegram 用戶，每個都要發：');
+  for (const id of CONFIG.telegramIds) {
+    const name = CONFIG.telegramNames[id] || id;
+    lines.push(`  - ${name}: target=${id}`);
+  }
   lines.push('⚠️ 重要：message tool 的 buttons 參數無效！必須用 exec 跑 CLI：');
-  lines.push('exec command: openclaw message send --channel telegram --target ' + CONFIG.telegramId + ' --message "<你的分析摘要>" --buttons \'[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]\'');
+  lines.push('對每個用戶執行：');
+  lines.push('exec command: openclaw message send --channel telegram --target <ID> --message "<你的分析摘要>" --buttons \'[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]\'');
   lines.push('注意：--message 的內容要用雙引號包住，裡面的特殊字元要 escape。');
-  lines.push('發送後回覆 NO_REPLY（因為已經用 CLI 發了）。');
+  lines.push('');
+  lines.push('每發完一則訊息，從 CLI 輸出中取得 Message ID，然後回報給 monitor：');
+  lines.push('exec command: curl -X POST http://127.0.0.1:4441/register-message -H "Content-Type: application/json" -d \'{"targetId":"<用戶ID>","messageId":"<Message ID>","content":"<你發的摘要>"}\'');
+  lines.push('');
+  lines.push('全部發完後回覆 NO_REPLY。');
   
   return lines.join('\n');
 }
@@ -306,13 +345,9 @@ async function sendToGateway(message, alertHash) {
           try {
             const result = JSON.parse(body);
             if (result.ok) {
-              // Extract message ID from nested response
-              const details = result.result?.details || {};
-              if (details.messageId) {
-                lastMessageId = details.messageId;
-                lastMessageContent = message; // Save original content for editing
-                debug('Saved message ID:', lastMessageId);
-              }
+              // Reset message IDs for new alert (sub-agent will register via /register-message)
+              lastMessageIds = {};
+              lastMessageContent = null;
               debug('Sent to Gateway successfully');
               resolve(true);
             } else {
@@ -346,33 +381,16 @@ async function sendToGateway(message, alertHash) {
 }
 
 /**
- * Edit Telegram message to remove buttons and show result
- * Preserves original content, just appends status
+ * Edit a single Telegram message
  */
-async function editTelegramMessage(messageId, action, success) {
+function editSingleMessage(targetId, messageId, newMessage) {
   return new Promise((resolve) => {
-    const isAllow = action.startsWith('allow');
-    const isOnce = action.endsWith('-once');
-    const statusEmoji = success ? (isAllow ? '✅' : '🚫') : '❌';
-    const durationText = isOnce ? ' (本次)' : ' (永久)';
-    const statusText = success 
-      ? (isAllow ? '已允許' : '已封鎖') + durationText
-      : '操作失敗';
-    
-    // Use original content if available, append status
-    let newMessage;
-    if (lastMessageContent) {
-      newMessage = `${lastMessageContent}\n\n${statusEmoji} **${statusText}**`;
-    } else {
-      newMessage = `${statusEmoji} **${statusText}**`;
-    }
-    
     const data = JSON.stringify({
       tool: 'message',
       args: {
         action: 'edit',
         channel: 'telegram',
-        target: CONFIG.telegramId,
+        target: targetId,
         messageId: messageId,
         message: newMessage
       }
@@ -395,7 +413,7 @@ async function editTelegramMessage(messageId, action, success) {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        debug('Edit message result:', res.statusCode);
+        debug('Edit message result:', res.statusCode, 'target:', targetId);
         resolve(res.statusCode === 200);
       });
     });
@@ -404,6 +422,40 @@ async function editTelegramMessage(messageId, action, success) {
     req.write(data);
     req.end();
   });
+}
+
+/**
+ * Edit Telegram messages for all users to show result and who acted
+ */
+async function editTelegramMessages(action, success, actorId) {
+  const isAllow = action.startsWith('allow');
+  const isOnce = action.endsWith('-once');
+  const statusEmoji = success ? (isAllow ? '✅' : '🚫') : '❌';
+  const durationText = isOnce ? ' (本次)' : ' (永久)';
+  const actorName = CONFIG.telegramNames[actorId] || actorId || 'unknown';
+  const statusText = success 
+    ? (isAllow ? '已允許' : '已封鎖') + durationText
+    : '操作失敗';
+  
+  const statusLine = `${statusEmoji} **${statusText}** by ${actorName}`;
+  
+  const editPromises = [];
+  for (const id of CONFIG.telegramIds) {
+    const msgId = lastMessageIds[id];
+    if (!msgId) continue;
+    
+    let newMessage;
+    if (lastMessageContent) {
+      newMessage = `${lastMessageContent}\n\n${statusLine}`;
+    } else {
+      newMessage = statusLine;
+    }
+    
+    editPromises.push(editSingleMessage(id, msgId, newMessage));
+  }
+  
+  const results = await Promise.all(editPromises);
+  return results.some(r => r);
 }
 
 /**
@@ -482,26 +534,63 @@ function startCommandServer() {
         running: true, 
         hasAlert: checkForAlert(),
         lastAlertHash,
-        lastMessageId
+        lastMessageIds,
+        telegramIds: CONFIG.telegramIds,
+        telegramNames: CONFIG.telegramNames
       }));
+    } else if (req.method === 'GET' && req.url === '/logs') {
+      try {
+        const logFile = path.join(LOGS_DIR, 'actions.jsonl');
+        const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').slice(-50);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(lines.map(l => JSON.parse(l))));
+      } catch (e) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('[]');
+      }
+    } else if (req.method === 'POST' && req.url === '/register-message') {
+      // Sub-agent registers sent message IDs for later editing
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', () => {
+        try {
+          const { targetId, messageId, content } = JSON.parse(body);
+          if (targetId && messageId) {
+            lastMessageIds[targetId] = messageId;
+            if (content) lastMessageContent = content;
+            debug('Registered message:', targetId, '->', messageId);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'targetId and messageId required' }));
+          }
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
     } else if (req.method === 'POST' && req.url === '/callback') {
       // Handle Telegram button callback
       let body = '';
       req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          const { action, messageId } = JSON.parse(body);
+          const { action, userId } = JSON.parse(body);
           const validActions = ['allow', 'block', 'allow-once', 'block-once'];
           if (validActions.includes(action)) {
             const success = executeAction(action);
             
-            // Edit Telegram message to remove buttons
-            if (messageId || lastMessageId) {
-              await editTelegramMessage(messageId || lastMessageId, action, success);
+            // Log the action
+            logAction(null, action, userId, success);
+            
+            // Edit all users' Telegram messages to show who acted
+            if (Object.keys(lastMessageIds).length > 0) {
+              await editTelegramMessages(action, success, userId);
             }
             
             res.writeHead(success ? 200 : 500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success, action, messageEdited: true }));
+            res.end(JSON.stringify({ success, action, userId, messageEdited: true }));
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Invalid action' }));
