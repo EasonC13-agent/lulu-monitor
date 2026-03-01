@@ -382,46 +382,22 @@ async function sendToGateway(message, alertHash) {
 }
 
 /**
- * Edit a single Telegram message
+ * Edit a single Telegram message via CLI (tools/invoke edit doesn't work)
  */
 function editSingleMessage(targetId, messageId, newMessage) {
   return new Promise((resolve) => {
-    const data = JSON.stringify({
-      tool: 'message',
-      args: {
-        action: 'edit',
-        channel: 'telegram',
-        target: targetId,
-        messageId: messageId,
-        message: newMessage
-      }
-    });
-
-    const options = {
-      hostname: CONFIG.gatewayHost,
-      port: CONFIG.gatewayPort,
-      path: '/tools/invoke',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(data),
-        ...(gatewayToken && { 'Authorization': `Bearer ${gatewayToken}` })
-      },
-      timeout: 10000
-    };
-
-    const req = http.request(options, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        debug('Edit message result:', res.statusCode, 'target:', targetId);
-        resolve(res.statusCode === 200);
-      });
-    });
-
-    req.on('error', () => resolve(false));
-    req.write(data);
-    req.end();
+    // Escape message for shell
+    const escapedMessage = newMessage.replace(/'/g, "'\\''");
+    const cmd = `openclaw message edit --channel telegram --target ${targetId} --message-id ${messageId} --message '${escapedMessage}'`;
+    
+    try {
+      execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: 'pipe' });
+      debug('Edit message success:', targetId, messageId);
+      resolve(true);
+    } catch (e) {
+      debug('Edit message failed:', targetId, messageId, e.message?.substring(0, 100));
+      resolve(false);
+    }
   });
 }
 
