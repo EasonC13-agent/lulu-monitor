@@ -298,7 +298,8 @@ function formatAlertMessage(alertData) {
   lines.push('注意：--message 的內容要用雙引號包住，裡面的特殊字元要 escape。');
   lines.push('');
   lines.push('每發完一則訊息，從 CLI 輸出中取得 Message ID，然後回報給 monitor：');
-  lines.push('exec command: curl -X POST http://127.0.0.1:4441/register-message -H "Content-Type: application/json" -d \'{"targetId":"<用戶ID>","messageId":"<Message ID>","content":"<你發的摘要>"}\'');
+  lines.push('exec command: curl -X POST http://127.0.0.1:4441/register-message -H "Content-Type: application/json" -d \'{"targetId":"<用戶ID>","messageId":"<Message ID>","content":"<完整的分析摘要文字，要跟你發送的 --message 一模一樣>"}\'');
+  lines.push('⚠️ content 必須是你發送的完整訊息內容（包含程式名、目標、分析、建議等），不是縮寫！因為後續編輯訊息會用這個 content 保留原文。');
   lines.push('');
   lines.push('全部發完後回覆 NO_REPLY。');
   
@@ -437,7 +438,7 @@ async function editTelegramMessages(action, success, actorId) {
     ? (isAllow ? '已允許' : '已封鎖') + durationText
     : '操作失敗';
   
-  const statusLine = `${statusEmoji} **${statusText}** by ${actorName}`;
+  const statusLine = `\n\n${statusEmoji} ${statusText} by ${actorName}`;
   
   const editPromises = [];
   for (const id of CONFIG.telegramIds) {
@@ -446,9 +447,9 @@ async function editTelegramMessages(action, success, actorId) {
     
     let newMessage;
     if (lastMessageContent) {
-      newMessage = `${lastMessageContent}\n\n${statusLine}`;
+      newMessage = lastMessageContent + statusLine;
     } else {
-      newMessage = statusLine;
+      newMessage = statusLine.trim();
     }
     
     editPromises.push(editSingleMessage(id, msgId, newMessage));
