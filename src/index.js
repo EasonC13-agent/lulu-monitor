@@ -287,32 +287,102 @@ function formatAlertMessage(alertData) {
   }
   
   lines.push('');
-  lines.push('發送摘要到以下所有 Telegram 用戶，每個都要發：');
-  for (const id of CONFIG.telegramIds) {
-    const name = CONFIG.telegramNames[id] || id;
-    lines.push(`  - ${name}: target=${id}`);
-  }
-  lines.push('⚠️ 重要：message tool 的 buttons 參數無效！必須用 exec 跑 CLI：');
-  lines.push('對每個用戶執行：');
-  lines.push('exec command: openclaw message send --channel telegram --target <ID> --message "<你的分析摘要>" --buttons \'[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]\'');
-  lines.push('注意：--message 的內容要用雙引號包住，裡面的特殊字元要 escape。');
+  lines.push('⚠️ 重要：不要自己發送 Telegram 訊息！只需要把分析結果寫入檔案，monitor 會自動發送給所有用戶。');
   lines.push('');
-  lines.push('每發完一則訊息，從 CLI 輸出中取得 Message ID，然後回報給 monitor：');
-  lines.push('exec command: curl -X POST http://127.0.0.1:4441/register-message -H "Content-Type: application/json" -d \'{"targetId":"<用戶ID>","messageId":"<Message ID>","content":"<完整的分析摘要文字，要跟你發送的 --message 一模一樣>"}\'');
-  lines.push('⚠️ content 必須是你發送的完整訊息內容（包含程式名、目標、分析、建議等），不是縮寫！因為後續編輯訊息會用這個 content 保留原文。');
+  lines.push('請把你的分析摘要（包含程式名、目標、風險等級、建議）寫入以下檔案：');
+  lines.push('exec command: cat > /tmp/lulu-analysis.txt << \'ANALYSIS_EOF\'');
+  lines.push('<你的完整分析摘要>');
+  lines.push('ANALYSIS_EOF');
   lines.push('');
-  lines.push('全部發完後回覆 NO_REPLY。');
+  lines.push('格式範例：');
+  lines.push('[LuLu] 🟢 低風險');
+  lines.push('');
+  lines.push('程式: curl');
+  lines.push('目標: example.com (1.2.3.4:443)');
+  lines.push('行為: HTTPS GET 請求');
+  lines.push('建議: ✅ Allow Once');
+  lines.push('');
+  lines.push('寫完檔案後回覆 NO_REPLY。');
   
   return lines.join('\n');
 }
 
 /**
+ * Send analysis to all Telegram users via CLI with inline buttons
+ */
+function sendToAllUsers(analysisText) {
+  lastMessageIds = {};
+  lastMessageContent = analysisText;
+  
+  const buttons = '[[{"text":"✅ Always Allow","callback_data":"lulu:allow"},{"text":"✅ Allow Once","callback_data":"lulu:allow-once"}],[{"text":"❌ Always Block","callback_data":"lulu:block"},{"text":"❌ Block Once","callback_data":"lulu:block-once"}]]';
+  
+  for (const id of CONFIG.telegramIds) {
+    try {
+      const escapedMessage = analysisText.replace(/'/g, "'\\''");
+      const cmd = `openclaw message send --channel telegram --target ${id} --message '${escapedMessage}' --buttons '${buttons}'`;
+      const output = execSync(cmd, { encoding: 'utf8', timeout: 15000, stdio: 'pipe' });
+      
+      // Extract message ID from CLI output
+      const match = output.match(/Message ID:\s*(\d+)/i);
+      if (match) {
+        lastMessageIds[id] = match[1];
+        debug('Sent to', id, '-> msg', match[1]);
+      } else {
+        log('⚠️ Sent to', id, 'but could not extract message ID');
+        debug('CLI output:', output);
+      }
+    } catch (e) {
+      log('❌ Failed to send to', id, ':', e.message?.substring(0, 100));
+    }
+  }
+  
+  log('📤 Sent to', Object.keys(lastMessageIds).length, '/', CONFIG.telegramIds.length, 'users');
+}
+
+/**
+ * Wait for analysis file written by sub-agent
+ */
+function waitForAnalysis(timeoutMs = 30000) {
+  return new Promise((resolve) => {
+    const analysisPath = '/tmp/lulu-analysis.txt';
+    const startTime = Date.now();
+    
+    // Clean up old file
+    try { fs.unlinkSync(analysisPath); } catch (e) {}
+    
+    const check = () => {
+      try {
+        const content = fs.readFileSync(analysisPath, 'utf8').trim();
+        if (content.length > 10) {
+          debug('Analysis file found:', content.length, 'chars');
+          try { fs.unlinkSync(analysisPath); } catch (e) {}
+          resolve(content);
+          return;
+        }
+      } catch (e) {}
+      
+      if (Date.now() - startTime > timeoutMs) {
+        debug('Analysis file timeout');
+        resolve(null);
+        return;
+      }
+      
+      setTimeout(check, 500);
+    };
+    check();
+  });
+}
+
+/**
  * Send alert to OpenClaw for AI analysis
- * Uses sessions_spawn with fast model (haiku) for quick response
+ * Sub-agent analyzes and writes to /tmp/lulu-analysis.txt
+ * Then lulu-monitor sends to all users via CLI
  */
 async function sendToGateway(message, alertHash) {
   return new Promise((resolve, reject) => {
-    // Spawn a fast sub-agent to analyze and send to Telegram
+    // Clean up old analysis file
+    try { fs.unlinkSync('/tmp/lulu-analysis.txt'); } catch (e) {}
+    
     const data = JSON.stringify({
       tool: 'sessions_spawn',
       args: {
@@ -341,15 +411,23 @@ async function sendToGateway(message, alertHash) {
     const req = http.request(options, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
-      res.on('end', () => {
+      res.on('end', async () => {
         if (res.statusCode === 200) {
           try {
             const result = JSON.parse(body);
             if (result.ok) {
-              // Reset message IDs for new alert (sub-agent will register via /register-message)
-              lastMessageIds = {};
-              lastMessageContent = null;
-              debug('Sent to Gateway successfully');
+              debug('Sub-agent spawned, waiting for analysis file...');
+              
+              // Wait for sub-agent to write analysis
+              const analysis = await waitForAnalysis(30000);
+              
+              if (analysis) {
+                sendToAllUsers(analysis);
+                log('✅ Analysis received and sent to all users');
+              } else {
+                log('⚠️ Analysis file not found after timeout, sub-agent may have failed');
+              }
+              
               resolve(true);
             } else {
               debug('Gateway returned error:', result);
@@ -357,7 +435,7 @@ async function sendToGateway(message, alertHash) {
             }
           } catch (e) {
             debug('Failed to parse response:', body);
-            resolve(true); // Assume success if we got 200
+            resolve(true);
           }
         } else {
           debug('Gateway response:', res.statusCode, body);
